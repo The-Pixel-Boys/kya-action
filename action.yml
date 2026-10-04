@@ -1,7 +1,7 @@
 name: "KYA Certify"
 description: >-
-  Run `kya certify` (Know Your Agent — Agent Trust Baseline) in CI and post the
-  gap summary as a PR comment. For repositories that use AI coding agents.
+  Run kya certify (Know Your Agent trust baseline) in CI and post the gap
+  summary as a PR comment.
 author: "Shield Agent"
 branding:
   icon: shield
