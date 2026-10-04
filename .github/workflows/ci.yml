@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  certify:
+    name: Self-dogfood kya certify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run kya certify on this repo
+        uses: ./
+        with:
+          fail-on: never
+          comment-on-pr: "true"
+
+      - name: Upload certify artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kya-certify-report
+          path: .kya/certify/
+          if-no-files-found: warn

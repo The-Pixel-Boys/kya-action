@@ -1,0 +1,177 @@
+name: "KYA Certify"
+description: >-
+  Run `kya certify` (Know Your Agent — Agent Trust Baseline) in CI and post the
+  gap summary as a PR comment. For repositories that use AI coding agents.
+author: "Shield Agent"
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  fail-on:
+    description: >-
+      When the workflow should fail. One of: `gap` (fail if any gap is found),
+      `severity` (fail only on high-severity gaps), or `never` (report only,
+      never fail). Maps to `kya certify --fail-on`.
+    required: false
+    default: "gap"
+  window-days:
+    description: "Look-back window in days for agent-activity evidence. Maps to `kya certify --window`."
+    required: false
+    default: "30"
+  comment-on-pr:
+    description: "Post the certify gap summary as a comment on pull requests."
+    required: false
+    default: "true"
+  kya-version:
+    description: "Version of the `@shield-agent/kya` npm package to install."
+    required: false
+    default: "latest"
+
+outputs:
+  exit-code:
+    description: "Exit code of `kya certify` (0 = clean, non-zero = gaps or error)."
+    value: ${{ steps.certify.outputs.exit-code }}
+  status:
+    description: "Certify outcome: `pass`, `gap`, or `error`."
+    value: ${{ steps.certify.outputs.status }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install KYA
+      shell: bash
+      run: npm i -g @shield-agent/kya@${{ inputs.kya-version }}
+
+    - name: Run kya certify
+      id: certify
+      continue-on-error: ${{ inputs.fail-on == 'never' }}
+      shell: bash
+      run: |
+        set +e
+        kya certify --window "${{ inputs.window-days }}" --fail-on "${{ inputs.fail-on }}" --json
+        code=$?
+        set -e
+        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
+        if [ "${code}" -eq 0 ]; then
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+        elif [ "${code}" -eq 1 ]; then
+          echo "status=gap" >> "$GITHUB_OUTPUT"
+        else
+          echo "status=error" >> "$GITHUB_OUTPUT"
+        fi
+        exit ${code}
+
+    - name: Comment certify summary on PR
+      if: ${{ always() && inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          const root = process.env.GITHUB_WORKSPACE || '.';
+          const dir = path.join(root, '.kya', 'certify');
+
+          // kya certify writes a fixed report.json; fall back to the newest JSON in the dir
+          let report = null;
+          const fixed = path.join(dir, 'report.json');
+          if (fs.existsSync(fixed)) {
+            report = JSON.parse(fs.readFileSync(fixed, 'utf8'));
+          } else if (fs.existsSync(dir)) {
+            const files = fs.readdirSync(dir)
+              .filter(f => f.endsWith('.json'))
+              .map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+              .sort((a, b) => b.t - a.t);
+            if (files.length > 0) {
+              report = JSON.parse(fs.readFileSync(path.join(dir, files[0].f), 'utf8'));
+            }
+          }
+
+          const exitCode = parseInt('${{ steps.certify.outputs.exit-code }}', 10);
+          const status = '${{ steps.certify.outputs.status }}';
+
+          const pill = status === 'pass'
+            ? '![passing](https://img.shields.io/badge/KYA%20Certified-passing-green)'
+            : status === 'gap'
+              ? '![gaps](https://img.shields.io/badge/KYA%20Certified-gaps-red)'
+              : '![error](https://img.shields.io/badge/KYA%20Certified-error-yellow)';
+
+          const requirements = Array.isArray(report?.requirements) ? report.requirements : [];
+          const severityRank = { critical: 0, high: 1, medium: 2, low: 3 };
+          const gaps = requirements
+            .filter(r => r.status !== 'pass')
+            .sort((a, b) => (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9));
+
+          const firstSentence = (text) => {
+            if (!text) return '';
+            // evidence is usually "summary — remediation hint"; keep the summary
+            const summary = String(text).split(/\s+—\s+/)[0].trim();
+            const m = summary.match(/^.*?[.!?](?=\s|$)/);
+            return (m ? m[0] : summary.slice(0, 160)).trim();
+          };
+
+          const lines = [
+            `${pill} **KYA Agent Trust Baseline**`,
+            '',
+            `- Status: **${status}** (exit code ${exitCode})`,
+          ];
+          if (report?.overall) {
+            const o = report.overall;
+            const parts = [];
+            if (typeof o.pass === 'number') parts.push(`${o.pass} passed`);
+            if (typeof o.gap === 'number') parts.push(`${o.gap} gap(s)`);
+            if (typeof o.insufficientEvidence === 'number') parts.push(`${o.insufficientEvidence} insufficient evidence`);
+            if (parts.length > 0) lines.push(`- Requirements: ${parts.join(', ')}`);
+          } else if (requirements.length > 0) {
+            lines.push(`- Requirements: ${requirements.length - gaps.length} passed, ${gaps.length} gap(s)`);
+          }
+          const windowDays = report?.window?.days ?? '${{ inputs.window-days }}';
+          let statsLine = `- Window: ${windowDays} days · fail-on: '${'${{ inputs.fail-on }}'}'`;
+          if (typeof report?.trail?.eventCount === 'number') {
+            statsLine += ` · ${report.trail.eventCount} trail events`;
+          }
+          lines.push(statsLine);
+
+          const top = gaps.slice(0, 5);
+          if (top.length > 0) {
+            lines.push('', '**Top gaps**', '');
+            for (const g of top) {
+              const hint = firstSentence(g.evidence);
+              lines.push(`- \`${g.id}\` [${g.severity}] **${g.title}**${hint ? ` — ${hint}` : ''}`);
+            }
+          }
+
+          if (!report) {
+            lines.push('', '> _No JSON report found in `.kya/certify/` — see the workflow logs for details._');
+          }
+
+          const marker = '<!-- kya-certify-report -->';
+          const body = `${marker}\n${lines.join('\n')}`;
+
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          const existing = comments.find(c => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
