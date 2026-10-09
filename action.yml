@@ -10,9 +10,9 @@ branding:
 inputs:
   fail-on:
     description: >-
-      When the workflow should fail. One of: `gap` (fail if any gap is found),
-      `severity` (fail only on high-severity gaps), or `never` (report only,
-      never fail). Maps to `kya certify --fail-on`.
+      When the workflow should fail. One of: `gap` (fail if any gap is found)
+      or `never` (report only, never fail). Maps to `kya certify --fail-on`,
+      which accepts exactly these two values.
     required: false
     default: "gap"
   window-days:

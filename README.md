@@ -31,7 +31,7 @@ jobs:
 
       - uses: The-Pixel-Boys/kya-action@v1
         with:
-          fail-on: gap        # gap | severity | never
+          fail-on: gap        # gap | never
           window-days: 30     # look-back window for agent-activity evidence
           comment-on-pr: true
 ```
@@ -64,7 +64,7 @@ Beyond the CI report, the KYA toolkit gives you:
 
 | Input | Default | Description |
 |---|---|---|
-| `fail-on` | `gap` | When the workflow fails: `gap` (any gap), `severity` (high-severity only), or `never` (report only). Maps to `kya certify --fail-on`. |
+| `fail-on` | `gap` | When the workflow fails: `gap` (any gap) or `never` (report only). Maps to `kya certify --fail-on`, which accepts exactly these two values; anything else exits 2 and the step reports `status=error`. |
 | `window-days` | `30` | Look-back window in days for agent-activity evidence. Maps to `kya certify --window`. |
 | `comment-on-pr` | `true` | Post the gap summary as a PR comment (status pill, pass/gap counts, top gaps). |
 | `kya-version` | `latest` | Version of `@shield-agent/kya` to install. |
