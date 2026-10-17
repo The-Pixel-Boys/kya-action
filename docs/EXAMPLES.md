@@ -32,7 +32,7 @@ jobs:
           comment-on-pr: false
 
       - name: Upload weekly report
-        if: ${{ always() && steps.kya.outputs.status != 'error' }}
+        if: ${{ always() && (steps.kya.outputs.status == 'pass' || steps.kya.outputs.status == 'gap') }}
         uses: actions/upload-artifact@v4
         with:
           name: kya-weekly-baseline

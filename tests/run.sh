@@ -2,7 +2,9 @@
 # Tests for scripts/certify.sh and scripts/install.sh. Run: bash tests/run.sh
 # Stub cases put a fake `kya` first on PATH. Real-CLI cases need the published
 # @shield-agent/kya on PATH (npm i -g @shield-agent/kya) and are skipped
-# without it unless REQUIRE_REAL_KYA=1.
+# without it unless REQUIRE_REAL_KYA=1. CI pins the CLI version it installs.
+# Not covered here: the github-script comment step in action.yml (its
+# O_NOFOLLOW read); the self-dogfood job in CI runs it for real.
 set -u
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -114,6 +116,27 @@ token="$(sed -n 's/^::stop-commands::\(.*\)$/\1/p' "$c/log")"
 expect "stop-commands token emitted" "$([ -n "$token" ] && echo yes)" "yes"
 expect "resume after CLI output" "$(tail -n 1 "$c/log")" "::${token}::"
 
+new_case "stub: resume line starts a line even when CLI output has no trailing newline"
+stub 'printf "{\"no\":\"newline\"}"; printf "::warning::x" >&2; exit 0'
+run_certify "$c/stub"
+token="$(sed -n 's/^::stop-commands::\(.*\)$/\1/p' "$c/log")"
+expect "resume line at column 0" "$(grep -c "^::${token}::\$" "$c/log")" "1"
+warn_line="$(grep -n '::warning::x' "$c/log" | head -n 1 | cut -d: -f1)"
+resume_line="$(grep -n "^::${token}::\$" "$c/log" | cut -d: -f1)"
+expect "stderr command printed inside the fence" "$([ -n "$warn_line" ] && [ "$warn_line" -lt "$resume_line" ] && echo inside)" "inside"
+# stdout and stderr are separate pipes on the runner, so the fenced copy must be on stdout.
+(cd "$ws" && PATH="$c/stub:$PATH" GITHUB_WORKSPACE="$ws" GITHUB_OUTPUT="$c/out" RUNNER_TEMP="$c" bash "$certify") > "$c/stdout" 2>/dev/null
+expect "captured stderr is replayed on stdout" "$(grep -c '::warning::x' "$c/stdout")" "1"
+
+new_case "stub: stop-commands token differs between runs"
+stub 'exit 0'
+run_certify "$c/stub"
+t1="$(sed -n 's/^::stop-commands::\(.*\)$/\1/p' "$c/log")"
+run_certify "$c/stub"
+t2="$(sed -n 's/^::stop-commands::\(.*\)$/\1/p' "$c/log")"
+expect "32 hex chars" "$(printf '%s' "$t1" | grep -cE '^[0-9a-f]{32}$')" "1"
+expect "tokens differ" "$([ "$t1" != "$t2" ] && echo differ)" "differ"
+
 new_case "pre-run: symlinked .kya is refused without running the CLI"
 stub 'echo ran > "$GITHUB_WORKSPACE/../ran"; exit 0'
 ln -s "$outside" "$ws/.kya"
@@ -126,21 +149,26 @@ untouched
 
 # ---------- install.sh input validation ----------
 
-for bad in "npm:evil-pkg@1.0.0" "github:someone/repo" "git+https://example.com/x.git" "file:../x" "someone/repo" "1.0.0 --registry=x"; do
+for bad in "npm:evil-pkg@1.0.0" "github:someone/repo" "git+https://example.com/x.git" "file:../x" "someone/repo" \
+  "1.0.0 --registry=x" "." ".." "..." ".hidden" "x.tgz" "x.tar" "x.tar.gz" "-g" "--registry=x" "~/x" 'a$(id)'; do
   new_case "install: refuses kya-version '$bad'"
   printf '#!/usr/bin/env bash\necho called > "%s/npm-called"\n' "$c" > "$c/stub/npm"
   chmod +x "$c/stub/npm"
-  (PATH="$c/stub:$PATH" KYA_VERSION="$bad" bash "$install") > "$c/log" 2>&1
+  (PATH="$c/stub:$PATH" KYA_VERSION="$bad" RUNNER_TEMP="$c" bash "$install") > "$c/log" 2>&1
   expect "exit" "$?" "1"
   expect "npm not called" "$([ -e "$c/npm-called" ] && echo called || echo no)" "no"
 done
 
-new_case "install: passes a plain version through to npm"
-printf '#!/usr/bin/env bash\necho "$@" > "%s/args"\n' "$c" > "$c/stub/npm"
-chmod +x "$c/stub/npm"
-(PATH="$c/stub:$PATH" KYA_VERSION="^0.29" bash "$install") > "$c/log" 2>&1
-expect "exit" "$?" "0"
-expect "npm args" "$(cat "$c/args")" "i -g @shield-agent/kya@^0.29"
+# Empty means the default (latest), same as leaving the input out.
+for good in "latest" "next" "0.29.0" "0.29.0-rc.1" "^0.29" "~0.29.1" ">=0.28" "0.x" "*" ""; do
+  new_case "install: accepts kya-version '$good'"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s/args"\npwd -P > "%s/cwd"\n' "$c" "$c" > "$c/stub/npm"
+  chmod +x "$c/stub/npm"
+  (cd "$ws" && PATH="$c/stub:$PATH" KYA_VERSION="$good" RUNNER_TEMP="$c" bash "$install") > "$c/log" 2>&1
+  expect "exit" "$?" "0"
+  expect "npm args" "$(cat "$c/args")" "i -g --ignore-scripts @shield-agent/kya@${good:-latest}"
+  expect "npm runs outside the checkout" "$(cat "$c/cwd")" "$(cd "$c" && pwd -P)"
+done
 
 # ---------- real published CLI ----------
 

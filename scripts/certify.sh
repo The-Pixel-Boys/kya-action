@@ -72,8 +72,11 @@ token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 echo "::stop-commands::${token}"
 kya certify --window "${KYA_WINDOW_DAYS:-30}" --fail-on "${KYA_FAIL_ON:-gap}" --json 2>"$errf"
 code=$?
-cat "$errf" >&2
-echo "::${token}::"
+# Captured stderr goes to stdout so it stays inside the fence; the leading
+# newlines put the resume line at column 0 even when output has no trailing one.
+printf '\n'
+cat "$errf"
+printf '\n::%s::\n' "$token"
 
 if grep -q "PROJECT_PATH_REFUSED" "$errf"; then
   finish error "$code" "" "kya certify refused to write through a symlink that leaves the project (PROJECT_PATH_REFUSED). Replace the link with a regular directory or file. This is an error, not a certify gap."

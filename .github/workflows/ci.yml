@@ -24,9 +24,11 @@ jobs:
         with:
           node-version: 22
 
+      # Pinned so a new CLI release cannot change test results silently; bump
+      # it when checking a new kya release (companion rule).
       - name: Install the published CLI
         run: |
-          npm i -g @shield-agent/kya@latest
+          npm i -g --ignore-scripts @shield-agent/kya@0.29.0
           npm ls -g @shield-agent/kya
 
       - name: Run tests
@@ -47,10 +49,10 @@ jobs:
           fail-on: never
           comment-on-pr: "true"
 
-      # Skip the upload on error: a symlinked .kya would otherwise be followed
-      # into the artifact.
+      # Upload only on pass or gap: on error (or an empty status after a failed
+      # install) a symlink under .kya could be followed into the artifact.
       - name: Upload certify artifacts
-        if: ${{ always() && steps.kya.outputs.status != 'error' }}
+        if: ${{ always() && (steps.kya.outputs.status == 'pass' || steps.kya.outputs.status == 'gap') }}
         uses: actions/upload-artifact@v4
         with:
           name: kya-certify-report
