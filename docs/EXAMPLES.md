@@ -1,6 +1,6 @@
 # Examples
 
-More real-world workflows for `shield-agent/kya-action`.
+More real-world workflows for `The-Pixel-Boys/kya-action`.
 
 ## 1. Certify on a weekly schedule
 
@@ -24,14 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: shield-agent/kya-action@v1
+      - uses: The-Pixel-Boys/kya-action@v1
+        id: kya
         with:
           fail-on: never
           window-days: 90
           comment-on-pr: false
 
       - name: Upload weekly report
-        if: always()
+        if: ${{ always() && (steps.kya.outputs.status == 'pass' || steps.kya.outputs.status == 'gap') }}
         uses: actions/upload-artifact@v4
         with:
           name: kya-weekly-baseline
@@ -60,7 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: shield-agent/kya-action@v1
+      - uses: The-Pixel-Boys/kya-action@v1
         with:
           fail-on: never
           comment-on-pr: false

@@ -11,6 +11,31 @@ permissions:
   pull-requests: write
 
 jobs:
+  test:
+    name: Script tests (stub + published CLI)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Pinned so a new CLI release cannot change test results silently; bump
+      # it when checking a new kya release (companion rule).
+      - name: Install the published CLI
+        run: |
+          npm i -g --ignore-scripts @shield-agent/kya@0.29.0
+          npm ls -g @shield-agent/kya
+
+      - name: Run tests
+        env:
+          REQUIRE_REAL_KYA: "1"
+        run: bash tests/run.sh
+
   certify:
     name: Self-dogfood kya certify
     runs-on: ubuntu-latest
@@ -18,13 +43,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run kya certify on this repo
+        id: kya
         uses: ./
         with:
           fail-on: never
           comment-on-pr: "true"
 
+      # Upload only on pass or gap: on error (or an empty status after a failed
+      # install) a symlink under .kya could be followed into the artifact.
       - name: Upload certify artifacts
-        if: always()
+        if: ${{ always() && (steps.kya.outputs.status == 'pass' || steps.kya.outputs.status == 'gap') }}
         uses: actions/upload-artifact@v4
         with:
           name: kya-certify-report
