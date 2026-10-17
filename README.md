@@ -42,7 +42,7 @@ A PR comment with the certify status pill, pass/gap counts from the report's ove
 
 Reports (JSON/MD/HTML) are written to `.kya/certify/` so you can upload them as workflow artifacts. When `fail-on: never`, the step never fails the job (also when the status is `error`) and the exit code is still exposed via the outputs and the PR comment.
 
-To upload the reports, give the action step an `id` and skip the upload when the status is `error`, so a symlinked `.kya` in a PR is never followed into the artifact:
+To upload the reports, give the action step an `id` and skip the upload when the status is `error`, so a symlink planted under `.kya` in a PR is never followed into the artifact:
 
 ```yaml
       - uses: The-Pixel-Boys/kya-action@v1
@@ -56,7 +56,7 @@ To upload the reports, give the action step an `id` and skip the upload when the
 
 ## Symlinks in the checkout
 
-A pull request can commit symlinks. If `.kya`, `.kya/certify` or `.kya/certify/report.json` is a symlink, or resolves outside the workspace, the action does not run `kya certify` (or, if the link shows up during the run, does not read the report), reports `status=error` and posts no report contents in the PR comment. Newer kya releases also refuse such writes themselves: they exit 1 and print `PROJECT_PATH_REFUSED`. The action reports that as `status=error` too, never as `gap`. To fix it, replace the link with a regular directory or file and re-run.
+A pull request can commit symlinks. If `.kya`, `.kya/certify` or `.kya/certify/report.json` is a symlink or resolves outside the workspace, or anything under `.kya` is a symlink, the action does not run `kya certify` (or, if the link shows up during the run, does not read the report), reports `status=error` and posts no report contents in the PR comment. Newer kya releases also refuse such writes themselves: they exit 1 and print `PROJECT_PATH_REFUSED`. The action reports that as `status=error` too, never as `gap`. To fix it, replace the link with a regular directory or file and re-run.
 
 Inputs are passed to the shell and to the comment script through environment variables, never by interpolating them into the script, so a workflow can feed them from PR data without opening a script injection.
 

@@ -181,6 +181,21 @@ else
   expect "report-path empty" "$(out_val report-path)" ""
   untouched
 
+  new_case "real: .kya/certify/report.md symlinked to a runner file is error, not overwritten"
+  mkdir -p "$ws/.kya/certify"
+  ln -s "$outside/secret.txt" "$ws/.kya/certify/report.md"
+  run_certify "$real_dir"
+  expect "status" "$(out_val status)" "error"
+  expect "report-path empty" "$(out_val report-path)" ""
+  untouched
+
+  new_case "real: stray link under .kya/certify is error (not followed by an upload)"
+  mkdir -p "$ws/.kya/certify"
+  ln -s "$outside/secret.txt" "$ws/.kya/certify/extra"
+  run_certify "$real_dir"
+  expect "status" "$(out_val status)" "error"
+  untouched
+
   new_case "real: .kya/certify symlinked outside is error"
   mkdir -p "$ws/.kya"
   ln -s "$outside" "$ws/.kya/certify"

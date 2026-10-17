@@ -10,15 +10,16 @@
 #   - the CLI refused a write that leaves the project (stderr has
 #     PROJECT_PATH_REFUSED, kya newer than 0.29.0), or
 #   - .kya, .kya/certify or .kya/certify/report.json is a symlink or resolves
-#     outside the workspace (checked before and after the run, so a PR
-#     checkout cannot point the CLI or the PR comment at runner files).
+#     outside the workspace, or anything under .kya is a symlink (checked
+#     before and after the run, so a PR checkout cannot point the CLI, the PR
+#     comment or an artifact upload at runner files).
 set -u
 
 ws="${GITHUB_WORKSPACE:-$PWD}"
 out="${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
 report_rel=".kya/certify/report.json"
 
-# Prints a reason and returns 1 when a report path component is unsafe.
+# Prints a reason and returns 1 when the .kya tree is unsafe to write or read.
 check_paths() {
   local ws_real p rp
   ws_real="$(realpath "$ws")" || { echo "cannot resolve the workspace"; return 1; }
@@ -34,6 +35,13 @@ check_paths() {
       *) echo "$p resolves outside the workspace"; return 1 ;;
     esac
   done
+  # Any link deeper down (report.md, report.html, a stray file) would be
+  # written through by older CLIs or followed by an artifact upload. find does
+  # not follow links; the link name is not printed (it is PR data).
+  if [ -d "$ws/.kya" ] && [ -n "$(find "$ws/.kya" -type l -print -quit)" ]; then
+    echo ".kya contains a symlink"
+    return 1
+  fi
   return 0
 }
 
