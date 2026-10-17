@@ -150,7 +150,7 @@ untouched
 # ---------- install.sh input validation ----------
 
 for bad in "npm:evil-pkg@1.0.0" "github:someone/repo" "git+https://example.com/x.git" "file:../x" "someone/repo" \
-  "1.0.0 --registry=x" "." ".." "..." ".hidden" "x.tgz" "x.tar" "x.tar.gz" "-g" "--registry=x" "~/x" 'a$(id)'; do
+  "1.0.0 --registry=x" "." ".." "..." ".hidden" "x.tgz" "x.tar" "x.tar.gz" "x.TGZ" "x.Tar" "x.TAR.GZ" "-g" "--registry=x" "~/x" 'a$(id)'; do
   new_case "install: refuses kya-version '$bad'"
   printf '#!/usr/bin/env bash\necho called > "%s/npm-called"\n' "$c" > "$c/stub/npm"
   chmod +x "$c/stub/npm"

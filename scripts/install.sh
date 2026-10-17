@@ -11,9 +11,12 @@ v="${KYA_VERSION:-latest}"
 re='^[0-9A-Za-z^~*<>=][0-9A-Za-z.+^~*<>=|-]*$'
 ok=1
 [[ "$v" =~ $re ]] || ok=0
+# npm matches tarball suffixes case-insensitively (x.TGZ, x.Tar).
+shopt -s nocasematch
 case "$v" in
   *.tgz | *.tar | *.tar.gz | .*) ok=0 ;;
 esac
+shopt -u nocasematch
 if [ "$ok" -ne 1 ]; then
   echo "::error title=kya certify::kya-version must be an npm version, dist-tag or range of @shield-agent/kya (got an unsupported value)."
   exit 1
