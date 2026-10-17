@@ -30,10 +30,10 @@ inputs:
 
 outputs:
   exit-code:
-    description: "Exit code of `kya certify` (0 = clean, non-zero = gaps or error)."
+    description: "Exit code of `kya certify` (0 = clean, 1 = gaps, 2+ = error). Empty when certify was not run because the report path is unsafe."
     value: ${{ steps.certify.outputs.exit-code }}
   status:
-    description: "Certify outcome: `pass`, `gap`, or `error`."
+    description: "Certify outcome: `pass`, `gap`, or `error`. A PROJECT_PATH_REFUSED refusal or a symlinked `.kya` report path is `error`, never `gap`."
     value: ${{ steps.certify.outputs.status }}
 
 runs:
@@ -46,55 +46,55 @@ runs:
 
     - name: Install KYA
       shell: bash
-      run: npm i -g @shield-agent/kya@${{ inputs.kya-version }}
+      env:
+        KYA_VERSION: ${{ inputs.kya-version }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install.sh"
 
     - name: Run kya certify
       id: certify
       continue-on-error: ${{ inputs.fail-on == 'never' }}
       shell: bash
-      run: |
-        set +e
-        kya certify --window "${{ inputs.window-days }}" --fail-on "${{ inputs.fail-on }}" --json
-        code=$?
-        set -e
-        echo "exit-code=${code}" >> "$GITHUB_OUTPUT"
-        if [ "${code}" -eq 0 ]; then
-          echo "status=pass" >> "$GITHUB_OUTPUT"
-        elif [ "${code}" -eq 1 ]; then
-          echo "status=gap" >> "$GITHUB_OUTPUT"
-        else
-          echo "status=error" >> "$GITHUB_OUTPUT"
-        fi
-        exit ${code}
+      env:
+        KYA_WINDOW_DAYS: ${{ inputs.window-days }}
+        KYA_FAIL_ON: ${{ inputs.fail-on }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/certify.sh"
 
     - name: Comment certify summary on PR
       if: ${{ always() && inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' }}
       uses: actions/github-script@v7
+      env:
+        KYA_REPORT_PATH: ${{ steps.certify.outputs.report-path }}
+        KYA_EXIT_CODE: ${{ steps.certify.outputs.exit-code }}
+        KYA_STATUS: ${{ steps.certify.outputs.status }}
+        KYA_WINDOW_DAYS: ${{ inputs.window-days }}
+        KYA_FAIL_ON: ${{ inputs.fail-on }}
       with:
         script: |
           const fs = require('fs');
           const path = require('path');
 
-          const root = process.env.GITHUB_WORKSPACE || '.';
-          const dir = path.join(root, '.kya', 'certify');
-
-          // kya certify writes a fixed report.json; fall back to the newest JSON in the dir
+          // certify.sh only sets KYA_REPORT_PATH after checking that the report
+          // and its parents are not symlinks and stay inside the workspace;
+          // O_NOFOLLOW refuses a leaf link planted after that check.
           let report = null;
-          const fixed = path.join(dir, 'report.json');
-          if (fs.existsSync(fixed)) {
-            report = JSON.parse(fs.readFileSync(fixed, 'utf8'));
-          } else if (fs.existsSync(dir)) {
-            const files = fs.readdirSync(dir)
-              .filter(f => f.endsWith('.json'))
-              .map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
-              .sort((a, b) => b.t - a.t);
-            if (files.length > 0) {
-              report = JSON.parse(fs.readFileSync(path.join(dir, files[0].f), 'utf8'));
+          const reportPath = process.env.KYA_REPORT_PATH || '';
+          if (reportPath) {
+            try {
+              const fd = fs.openSync(reportPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+              try {
+                report = JSON.parse(fs.readFileSync(fd, 'utf8'));
+              } finally {
+                fs.closeSync(fd);
+              }
+            } catch (e) {
+              core.warning(`Could not read the certify report: ${e.message}`);
             }
           }
 
-          const exitCode = parseInt('${{ steps.certify.outputs.exit-code }}', 10);
-          const status = '${{ steps.certify.outputs.status }}';
+          const exitCode = process.env.KYA_EXIT_CODE || 'n/a';
+          const status = process.env.KYA_STATUS || 'error';
+          const windowInput = process.env.KYA_WINDOW_DAYS || '';
+          const failOn = process.env.KYA_FAIL_ON || '';
 
           const pill = status === 'pass'
             ? '![passing](https://img.shields.io/badge/KYA%20Certified-passing-green)'
@@ -131,8 +131,8 @@ runs:
           } else if (requirements.length > 0) {
             lines.push(`- Requirements: ${requirements.length - gaps.length} passed, ${gaps.length} gap(s)`);
           }
-          const windowDays = report?.window?.days ?? '${{ inputs.window-days }}';
-          let statsLine = `- Window: ${windowDays} days · fail-on: '${'${{ inputs.fail-on }}'}'`;
+          const windowDays = report?.window?.days ?? windowInput;
+          let statsLine = `- Window: ${windowDays} days · fail-on: '${failOn}'`;
           if (typeof report?.trail?.eventCount === 'number') {
             statsLine += ` · ${report.trail.eventCount} trail events`;
           }
@@ -148,7 +148,9 @@ runs:
           }
 
           if (!report) {
-            lines.push('', '> _No JSON report found in `.kya/certify/` — see the workflow logs for details._');
+            lines.push('', status === 'error'
+              ? '> _Certify ended in an error, so no report is shown. See the workflow logs for details._'
+              : '> _No JSON report found in `.kya/certify/`. See the workflow logs for details._');
           }
 
           const marker = '<!-- kya-certify-report -->';
