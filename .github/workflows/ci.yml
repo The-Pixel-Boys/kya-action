@@ -39,6 +39,10 @@ jobs:
   certify:
     name: Self-dogfood kya certify
     runs-on: ubuntu-latest
+    env:
+      # Test hook: the summary step also writes a copy here, because each step
+      # has its own job summary and the assert steps cannot read the step's file.
+      KYA_SUMMARY_COPY: ${{ runner.temp }}/kya-summary-dogfood.md
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -52,9 +56,9 @@ jobs:
       # The job summary must exist and carry the verdict and footer lines.
       - name: Assert the job summary
         run: |
-          test -s "$GITHUB_STEP_SUMMARY" || { echo "job summary is empty"; exit 1; }
-          grep -q '^\*\*Verdict:\*\* ' "$GITHUB_STEP_SUMMARY" || { echo "no verdict line"; cat "$GITHUB_STEP_SUMMARY"; exit 1; }
-          grep -qx 'Hosted history: https://shield-agent.com/' "$GITHUB_STEP_SUMMARY" || { echo "no footer line"; exit 1; }
+          test -s "$KYA_SUMMARY_COPY" || { echo "job summary is empty"; exit 1; }
+          grep -q '^\*\*Verdict:\*\* ' "$KYA_SUMMARY_COPY" || { echo "no verdict line"; cat "$KYA_SUMMARY_COPY"; exit 1; }
+          grep -qx 'Hosted history: https://shield-agent.com/' "$KYA_SUMMARY_COPY" || { echo "no footer line"; exit 1; }
 
       # Upload only on pass or gap: on error (or an empty status after a failed
       # install) a symlink under .kya could be followed into the artifact.
@@ -69,6 +73,8 @@ jobs:
   certify-denied:
     name: Denied path (certify error fails the job, summary says failed)
     runs-on: ubuntu-latest
+    env:
+      KYA_SUMMARY_COPY: ${{ runner.temp }}/kya-summary-denied.md
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -89,4 +95,4 @@ jobs:
           OUTCOME: ${{ steps.kya.outcome }}
         run: |
           test "$OUTCOME" = "failure" || { echo "expected failure, got $OUTCOME"; exit 1; }
-          grep -q '^\*\*Verdict:\*\* failed\.' "$GITHUB_STEP_SUMMARY" || { echo "summary has no failed verdict"; cat "$GITHUB_STEP_SUMMARY"; exit 1; }
+          grep -q '^\*\*Verdict:\*\* failed\.' "$KYA_SUMMARY_COPY" || { echo "summary has no failed verdict"; cat "$KYA_SUMMARY_COPY"; exit 1; }

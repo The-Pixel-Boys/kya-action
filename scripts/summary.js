@@ -36,7 +36,9 @@ function readReport(reportPath) {
     fd = fs.openSync(reportPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
     return JSON.parse(fs.readFileSync(fd, 'utf8'));
   } catch (e) {
-    console.log(`::warning title=kya certify::Could not read the certify report: ${e.message}`);
+    // Fixed text only. The parser message can quote report bytes, and a quoted
+    // newline would start a new workflow command line.
+    console.log('::warning title=kya certify::The certify report could not be read or is not valid JSON.');
     return null;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
@@ -130,6 +132,11 @@ function main() {
     fs.appendFileSync(target, `${text}\n`);
   } else {
     process.stdout.write(`${text}\n`);
+  }
+  // Test hook, unset for users. Each step has its own job summary, so the CI
+  // self-test cannot read this step's summary from a later step. It reads this copy.
+  if (process.env.KYA_SUMMARY_COPY) {
+    fs.appendFileSync(process.env.KYA_SUMMARY_COPY, `${text}\n`);
   }
 }
 

@@ -137,6 +137,16 @@ t2="$(sed -n 's/^::stop-commands::\(.*\)$/\1/p' "$c/log")"
 expect "32 hex chars" "$(printf '%s' "$t1" | grep -cE '^[0-9a-f]{32}$')" "1"
 expect "tokens differ" "$([ "$t1" != "$t2" ] && echo differ)" "differ"
 
+new_case "outputs: a newline in the report path is refused, not written"
+nl_ws="$c/ws-$(printf 'x\ny')"
+mkdir -p "$nl_ws"
+ws="$nl_ws"
+stub 'mkdir -p .kya/certify; echo "{}" > .kya/certify/report.json; exit 1'
+run_certify "$c/stub"
+expect "status" "$(out_val status)" "error"
+expect "report-path written empty" "$(grep -c '^report-path=$' "$c/out")" "1"
+expect "no extra output line" "$(wc -l < "$c/out" | tr -d ' ')" "3"
+
 new_case "pre-run: symlinked .kya is refused without running the CLI"
 stub 'echo ran > "$GITHUB_WORKSPACE/../ran"; exit 0'
 ln -s "$outside" "$ws/.kya"
@@ -230,6 +240,22 @@ expect "verdict error" "$(has '**Verdict:** error. kya certify did not complete.
 new_case "summary: certify did not run (empty status) says failed"
 summ "" "" "" gap true
 expect "verdict" "$(has 'kya certify did not run')" "yes"
+
+new_case "summary: unparseable report text cannot inject workflow commands"
+mkdir -p "$c/rep"
+printf '%s\n' '%0A' '::error::pwned' > "$c/rep/bad.json"
+summ gap 1 "$c/rep/bad.json" gap true
+expect "no injected error command in the log" "$(grep -c '^::error' "$c/log")" "0"
+expect "no encoded newline in the log" "$(grep -c '%0A' "$c/log")" "0"
+expect "no workflow command in the summary" "$(grep -c '^::' "$c/summary.md")" "0"
+expect "still says no report" "$(has 'No JSON report was found')" "yes"
+
+new_case "summary: test copy hook writes the same text"
+write_report "$c/rep/report.json"
+: > "$c/copy.md"
+(cd "$ws" && GITHUB_STEP_SUMMARY="$c/summary.md" KYA_SUMMARY_COPY="$c/copy.md" KYA_STATUS=gap KYA_EXIT_CODE=1 \
+  KYA_REPORT_PATH="$c/rep/report.json" KYA_FAIL_ON=gap KYA_FOOTER=true KYA_WINDOW_DAYS=30 node "$summary") > "$c/log" 2>&1
+expect "copy equals step summary" "$(cmp -s "$c/copy.md" "$c/summary.md" && echo same)" "same"
 
 new_case "summary: footer false removes the hosted link"
 write_report "$c/rep/report.json"
