@@ -1,7 +1,7 @@
 name: "KYA Certify"
 description: >-
-  Run kya certify (Know Your Agent trust baseline) in CI and post the gap
-  summary as a PR comment.
+  Run kya certify (Know Your Agent trust baseline) in CI. Writes a job summary
+  and posts the gap summary as a PR comment.
 author: "Shield Agent"
 branding:
   icon: shield
@@ -27,6 +27,12 @@ inputs:
     description: "Version of the `@shield-agent/kya` npm package to install."
     required: false
     default: "latest"
+  footer:
+    description: >-
+      Add a footer line with a link to the hosted history page to the job
+      summary. Set to `false` to turn it off.
+    required: false
+    default: "true"
 
 outputs:
   exit-code:
@@ -40,7 +46,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 24
 
@@ -59,9 +65,21 @@ runs:
         KYA_FAIL_ON: ${{ inputs.fail-on }}
       run: bash "$GITHUB_ACTION_PATH/scripts/certify.sh"
 
+    - name: Write job summary
+      if: ${{ always() }}
+      shell: bash
+      env:
+        KYA_STATUS: ${{ steps.certify.outputs.status }}
+        KYA_EXIT_CODE: ${{ steps.certify.outputs.exit-code }}
+        KYA_REPORT_PATH: ${{ steps.certify.outputs.report-path }}
+        KYA_WINDOW_DAYS: ${{ inputs.window-days }}
+        KYA_FAIL_ON: ${{ inputs.fail-on }}
+        KYA_FOOTER: ${{ inputs.footer }}
+      run: node "$GITHUB_ACTION_PATH/scripts/summary.js"
+
     - name: Comment certify summary on PR
       if: ${{ always() && inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' }}
-      uses: actions/github-script@v7
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
       env:
         KYA_REPORT_PATH: ${{ steps.certify.outputs.report-path }}
         KYA_EXIT_CODE: ${{ steps.certify.outputs.exit-code }}

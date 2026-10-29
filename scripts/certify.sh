@@ -46,6 +46,10 @@ check_paths() {
 }
 
 finish() { # status exit-code report-path reason
+  # $GITHUB_OUTPUT is line-based: a newline in a value would write extra outputs.
+  if [ "$1" != "error" ] && [[ "$3" == *$'\n'* ]]; then
+    finish error "$2" "" "The report path contains a newline. Not writing it to the outputs. This is an error, not a certify gap."
+  fi
   {
     echo "exit-code=$2"
     echo "status=$1"
