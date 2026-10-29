@@ -17,10 +17,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -40,7 +40,7 @@ jobs:
     name: Self-dogfood kya certify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Run kya certify on this repo
         id: kya
@@ -49,12 +49,44 @@ jobs:
           fail-on: never
           comment-on-pr: "true"
 
+      # The job summary must exist and carry the verdict and footer lines.
+      - name: Assert the job summary
+        run: |
+          test -s "$GITHUB_STEP_SUMMARY" || { echo "job summary is empty"; exit 1; }
+          grep -q '^\*\*Verdict:\*\* ' "$GITHUB_STEP_SUMMARY" || { echo "no verdict line"; cat "$GITHUB_STEP_SUMMARY"; exit 1; }
+          grep -qx 'Hosted history: https://shield-agent.com/' "$GITHUB_STEP_SUMMARY" || { echo "no footer line"; exit 1; }
+
       # Upload only on pass or gap: on error (or an empty status after a failed
       # install) a symlink under .kya could be followed into the artifact.
       - name: Upload certify artifacts
         if: ${{ always() && (steps.kya.outputs.status == 'pass' || steps.kya.outputs.status == 'gap') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kya-certify-report
           path: .kya/certify/
           if-no-files-found: warn
+
+  certify-denied:
+    name: Denied path (certify error fails the job, summary says failed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # A symlinked .kya is refused before kya runs, so certify ends in status=error.
+      - name: Plant a symlinked .kya
+        run: ln -s "$RUNNER_TEMP" .kya
+
+      - name: Run kya certify (must fail)
+        id: kya
+        uses: ./
+        continue-on-error: true
+        with:
+          fail-on: gap
+          comment-on-pr: "false"
+
+      - name: Assert the step failed and the summary says failed
+        env:
+          OUTCOME: ${{ steps.kya.outcome }}
+        run: |
+          test "$OUTCOME" = "failure" || { echo "expected failure, got $OUTCOME"; exit 1; }
+          grep -q '^\*\*Verdict:\*\* failed\.' "$GITHUB_STEP_SUMMARY" || { echo "summary has no failed verdict"; cat "$GITHUB_STEP_SUMMARY"; exit 1; }
