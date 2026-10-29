@@ -39,12 +39,13 @@ jobs:
   certify:
     name: Self-dogfood kya certify
     runs-on: ubuntu-latest
-    env:
-      # Test hook: the summary step also writes a copy here, because each step
-      # has its own job summary and the assert steps cannot read the step's file.
-      KYA_SUMMARY_COPY: ${{ runner.temp }}/kya-summary-dogfood.md
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Test hook: the summary step also writes a copy here, because each step
+      # has its own job summary and the assert steps cannot read the step's file.
+      - name: Set the summary copy path
+        run: echo "KYA_SUMMARY_COPY=$RUNNER_TEMP/kya-summary.md" >> "$GITHUB_ENV"
 
       - name: Run kya certify on this repo
         id: kya
@@ -73,10 +74,12 @@ jobs:
   certify-denied:
     name: Denied path (certify error fails the job, summary says failed)
     runs-on: ubuntu-latest
-    env:
-      KYA_SUMMARY_COPY: ${{ runner.temp }}/kya-summary-denied.md
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Test hook, same as the self-dogfood job.
+      - name: Set the summary copy path
+        run: echo "KYA_SUMMARY_COPY=$RUNNER_TEMP/kya-summary.md" >> "$GITHUB_ENV"
 
       # A symlinked .kya is refused before kya runs, so certify ends in status=error.
       - name: Plant a symlinked .kya
