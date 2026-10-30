@@ -12,6 +12,16 @@ AI agent audit trail and trust baseline, in your CI.
 
 The check is advisory. It reports missing evidence. It does not block agent actions.
 
+<!-- adoption:start -->
+Adoption, measured. The badge reads a public file that a daily job writes. A count under 50 is not shown. The badge reads "unavailable" when the last measurement failed. The website also hides any figure older than 48 hours.
+
+[![repos using kya-action](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/The-Pixel-Boys/shield-kya/downloads-data/badge-action-repos.json)](https://raw.githubusercontent.com/The-Pixel-Boys/shield-kya/downloads-data/badge-action-repos.json)
+
+Repos using kya-action: public repos outside The-Pixel-Boys, counted by GitHub code search. This count is approximate. Private repos are not counted, and the search covers default branches only.
+
+Hosted channel counts (Slack, Teams, webhook, helpdesk) and the date of each count are on https://shield-agent.com.
+<!-- adoption:end -->
+
 ## Quickstart
 
 ```yaml
